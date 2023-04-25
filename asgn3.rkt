@@ -24,14 +24,15 @@
     [(hash-has-key? ops sym) #f]
     [else (match sym
             ['def #f]
-            ['leq0 #f]
+            ['leq0? #f]
             ['else #f]
             ['then #f]
             ['= #f])]))
 
 (define (parse-fundef [s : Sexp]) : FundefC
   (match s
-    [(list (? symbol? (? ValidSymbol? id)) (? symbol? (? ValidSymbol? arg)) exp)
+    [(list (? symbol? (? ValidSymbol? id))
+           (? symbol? (? ValidSymbol? arg)) exp)
      (FunC id arg (parse exp))]))
 
 
@@ -68,8 +69,7 @@
     [(NumC n) n]
     [(BinopC '/ l (NumC 0)) (error 'interp "VVQS: divide by zero")]
     [(BinopC o l r)
-     ((hash-ref ops o (error 'interp "invalid binop ~e" o))
-      (interp l) (interp r))]
+     ((hash-ref ops o) (interp l) (interp r))]
     [(leq0? test then else) (if (<= (interp test) 0)
                                 (interp then)
                                 (interp else))]))
