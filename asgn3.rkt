@@ -1,8 +1,11 @@
 #lang typed/racket
 
 (require typed/rackunit)
+(struct IdC ([id : Symbol]) #:transparent)
+(define-type FundefC (U FunC))
+(struct FunC ([name : Symbol] [arg : Symbol] [body : ExprC])#:transparent)
 
-(define-type ExprC (U NumC BinopC leq0?))
+(define-type ExprC (U NumC BinopC leq0? IdC))
 (struct BinopC ([op : Symbol] [l : ExprC] [r : ExprC]) #:transparent)
 (struct NumC ([n : Real]) #:transparent)
 (struct leq0? ([test : ExprC] [then : ExprC] [else : ExprC]) #:transparent)
@@ -15,6 +18,21 @@
    '* *
    '- -
    '/ /))
+
+(define (ValidSymbol? [sym : Symbol]) : Boolean
+  (cond
+    [(hash-has-key? ops sym) #f]
+    [else (match sym
+            ['def #f]
+            ['leq0 #f]
+            ['else #f]
+            [])]))
+
+(define (parse-fundef [s : Sexp]) : FundefC
+  (match s
+    [(list (? symbol? (? ValidSymbol? id)) (? symbol? (? ValidSymbol? arg)) exp)
+     '()]))
+
 
 ;; main VVQS parsing function
 (define (parse [expr : Sexp]) : ExprC
