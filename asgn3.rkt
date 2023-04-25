@@ -5,10 +5,11 @@
 (define-type FundefC (U FunC))
 (struct FunC ([name : Symbol] [arg : Symbol] [body : ExprC])#:transparent)
 
-(define-type ExprC (U NumC BinopC leq0? IdC))
+(define-type ExprC (U NumC BinopC leq0? IdC FunAppC))
 (struct BinopC ([op : Symbol] [l : ExprC] [r : ExprC]) #:transparent)
 (struct NumC ([n : Real]) #:transparent)
 (struct leq0? ([test : ExprC] [then : ExprC] [else : ExprC]) #:transparent)
+(struct FunAppC ([fun : Symbol] [arg : ExprC]) #:transparent)
 
 ;; hash-table for BinopC, converts binary operators to their corresponding
 ;; racket operation
@@ -31,9 +32,24 @@
 
 (define (parse-fundef [s : Sexp]) : FundefC
   (match s
-    [(list (? symbol? (? ValidSymbol? id))
-           (? symbol? (? ValidSymbol? arg)) exp)
+    [(list 'def (list (? symbol? (? ValidSymbol? id))
+                      (? symbol? (? ValidSymbol? arg))) exp)
      (FunC id arg (parse exp))]))
+
+(define (parse-prog [s : Sexp]) : (Listof FundefC)
+  (map parse-fundef s))
+
+(define (lookup-fun (name : Symbol) (funs : (Listof FundefC))) : FundefC
+  (cond [(empty? funs) (error 'interp "VVQS: function not found ~a" name)]
+        [else
+         (define f (car funs))
+         (cond [(FunC? f) (if (symbol=? name (FunC-name f)) f (lookup-fun name (cdr funs)))]
+               [else (lookup-fun name (cdr funs))])]))
+
+(define (interp-fns [funs : (Listof FundefC)]) : Real
+  (define main (lookup-fun 'main funs))
+  (define init (NumC 0))
+  (interp (FunC-body main) funs))
 
 
 ;; main VVQS parsing function
@@ -45,7 +61,9 @@
                                   (error 'parse "VVQS: illegal operator ~e" s))]
     [(list 'leq0? test then else)
      (leq0? (parse test) (parse then) (parse else))]
-    [other (error 'parse "VVQS: illegal expression: ~e" other)]))
+    [(? symbol? id) (IdC id)]
+    [(list (? symbol? f) arg)
+     (FunAppC f (parse arg))]))
 
 (define a1 (BinopC '+ (NumC 1) (NumC 2)))
 (define a2 (BinopC '+ (NumC 3) a1))
@@ -64,16 +82,33 @@
 (check-equal? (parse '(leq0? 1 (+ 1 2) (+ 3 (+ 1 2)))) leq0-1)
 
 ;; interp consumes an abstract syntax tree to produce an answer
-(define (interp (ar : ExprC)) : Real
-  (match ar
+(define (interp [exp : ExprC] [funs : (Listof FundefC)]) : Real
+  (match exp
     [(NumC n) n]
-    [(BinopC '/ l (NumC 0)) (error 'interp "VVQS: divide by zero")]
     [(BinopC o l r)
-     ((hash-ref ops o) (interp l) (interp r))]
-    [(leq0? test then else) (if (<= (interp test) 0)
-                                (interp then)
-                                (interp else))]))
+     ((hash-ref ops o) (interp l funs) (interp r funs))]
+    [(leq0? test then else) (if (<= (interp test funs) 0)
+                                 (interp then funs)
+                                 (interp else funs))]
+    [(IdC id) (error 'interp "VVQS: unbound identifier ~a" id)]
+    [(FunAppC fun arg)
+     (define fun-def (lookup-fun fun funs))
+     (define arg-val (interp arg funs))
+     (define substituted-body (subst (FunC-arg fun-def) (NumC arg-val) (FunC-body fun-def)))
+     (interp substituted-body funs)]))
 
+(: top-interp (Sexp -> Real))
+(define (top-interp fun-sexps)
+  (interp-fns (parse-prog fun-sexps)))
+
+(define (subst (x : Symbol) (v : ExprC) (e : ExprC)) : ExprC
+  (match e
+    [(NumC _) e]
+    [(IdC id) (if (symbol=? x id) v e)]
+    [(BinopC o l r) (BinopC o (subst x v l) (subst x v r))]
+    [(leq0? test then else) (leq0? (subst x v test) (subst x v then) (subst x v else))]
+    [(FunAppC fun arg) (FunAppC fun (subst x v arg))]))
+  
 (check-equal? (interp a1) 3)
 (check-equal? (interp a2) 6)
 (check-equal? (interp a3) 18)
