@@ -28,12 +28,13 @@
             ['def #f]
             ['leq0 #f]
             ['else #f]
-            [])]))
+            ['then #f]
+            ['= #f])]))
 
 (define (parse-fundef [s : Sexp]) : FundefC
   (match s
     [(list (? symbol? (? ValidSymbol? id)) (? symbol? (? ValidSymbol? arg)) exp)
-     '()]))
+     (FunC id arg (parse exp))]))
 
 ;; main VVQS parsing function
 (define (parse [expr : Sexp]) : ExprC
@@ -57,7 +58,7 @@
   (match ar
     [(NumC n) n]
     [(BinopC o l r)
-     ((hash-ref binop-hash o (error 'interp "invalid binop ~e" o))
+     ((hash-ref ops o (error 'interp "invalid binop ~e" o))
                      (interp l) (interp r))]))
 
 (check-equal? (interp a1) 3)
