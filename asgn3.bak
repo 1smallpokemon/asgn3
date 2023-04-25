@@ -2,46 +2,26 @@
 
 (require typed/rackunit)
 
-(define-type ExprC (U NumC BinopC PlusC MultC IdC))
+(define-type ExprC (U NumC BinopC PlusC MultC))
 (struct BinopC ([op : Symbol] [l : ExprC] [r : ExprC]) #:transparent)
 (struct NumC ([n : Real]) #:transparent)
 (struct PlusC ([l : ExprC] [r : ExprC])#:transparent)
 (struct MultC ([l : ExprC] [r : ExprC])#:transparent)
-(struct IdC ([id : Symbol]) #:transparent)
-
-(define-type FundefC (U FunC))
-(struct FunC ([name : Symbol] [arg : Symbol] [body : ExprC])#:transparent)
 
 ;; hash-table for BinopC, converts binary operators to their corresponding
 ;; racket operation
-(define ops
+(define binop-hash
   (hash
-   '+ +
-   '* *
-   '- -
-   '/ /))
-
-(define (ValidSymbol? [sym : Symbol]) : Boolean
-  (cond
-    [(hash-has-key? ops sym) #f]
-    [else (match sym
-            ['def #f]
-            ['leq0 #f]
-            ['else #f]
-            [])]))
-
-(define (parse-fundef [s : Sexp]) : FundefC
-  (match s
-    [(list (? symbol? (? ValidSymbol? id)) (? symbol? (? ValidSymbol? arg)) exp)
-     '()]))
+   PlusC +
+   MultC *))
 
 ;; main VVQS parsing function
 (define (parse [expr : Sexp]) : ExprC
   (match expr
     [(? real? n) (NumC n)]
-    [(list (? symbol? s) l r) (if (hash-has-key? ops s)
+    [(list (? symbol? s) l r) (if (hash-has-key? binop-hash s)
                                   (BinopC s (parse l) (parse r))
-                                  (error  'parse "expected legal operator, got: ~e" s))]
+                                  (error  'parse "expected legal expression, got: ~e" s))]
     [other (error  'parse "expected legal expression, got: ~e" other)]))
 
 (define a1 (PlusC (NumC 1) (NumC 2)))
