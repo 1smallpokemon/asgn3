@@ -24,14 +24,16 @@
     [(hash-has-key? ops sym) #f]
     [else (match sym
             ['def #f]
-            ['leq0 #f]
+            ['leq0? #f]
             ['else #f]
-            [])]))
+            ['then #f]
+            ['= #f])]))
 
 (define (parse-fundef [s : Sexp]) : FundefC
   (match s
-    [(list (? symbol? (? ValidSymbol? id)) (? symbol? (? ValidSymbol? arg)) exp)
-     '()]))
+    [(list (? symbol? (? ValidSymbol? id))
+           (? symbol? (? ValidSymbol? arg)) exp)
+     (FunC id arg (parse exp))]))
 
 
 ;; main VVQS parsing function
