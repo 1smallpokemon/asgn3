@@ -68,15 +68,11 @@
     [(NumC n) n]
     [(BinopC '/ l (NumC 0)) (error 'interp "VVQS: divide by zero")]
     [(BinopC o l r)
-<<<<<<< HEAD
      ((hash-ref ops o (error 'interp "invalid binop ~e" o))
-                     (interp l) (interp r))]))
-=======
-     ((hash-ref ops o) (interp l) (interp r))]
+      (interp l) (interp r))]
     [(leq0? test then else) (if (<= (interp test) 0)
                                 (interp then)
                                 (interp else))]))
->>>>>>> eb848d0fe2cafc56c9197388ce62a2b569dc7e49
 
 (check-equal? (interp a1) 3)
 (check-equal? (interp a2) 6)
