@@ -28,19 +28,21 @@
             ['leq0? #f]
             ['else #f]
             ['then #f]
-            ['= #f])]))
+            ['= #f]
+            [other #t])]))
 
 (define (parse-fundef [s : Sexp]) : FundefC
   (match s
     [(list 'def (list (? symbol? (? ValidSymbol? id))
-                      (? symbol? (? ValidSymbol? arg))) exp)
-     (FunC id arg (parse exp))]))
+                      (? symbol? (? ValidSymbol? arg))) '= exp)
+     (FunC id arg (parse exp))]
+    [other (error 'parse-fundef "VVQS: illegal function ~e" s)]))
 
 (define (parse-prog [s : Sexp]) : (Listof FundefC)
-  (map parse-fundef s))
+  (map parse-fundef (cast s (Listof Sexp))))
 
 (define (lookup-fun (name : Symbol) (funs : (Listof FundefC))) : FundefC
-  (cond [(empty? funs) (error 'interp "VVQS: function not found ~a" name)]
+  (cond [(empty? funs) (error 'interp "VVQS: function not found ~e" name)]
         [else
          (define f (car funs))
          (cond [(FunC? f) (if (symbol=? name (FunC-name f)) f (lookup-fun name (cdr funs)))]
@@ -61,9 +63,10 @@
                                   (error 'parse "VVQS: illegal operator ~e" s))]
     [(list 'leq0? test then else)
      (leq0? (parse test) (parse then) (parse else))]
-    [(? symbol? id) (IdC id)]
-    [(list (? symbol? f) arg)
-     (FunAppC f (parse arg))]))
+    [(? symbol? (? ValidSymbol? id)) (IdC id)]
+    [(list (? symbol? (? ValidSymbol? f)) arg)
+     (FunAppC f (parse arg))]
+    [other (error 'parse "VVQS: illegal expression: ~e" other)]))
 
 (define a1 (BinopC '+ (NumC 1) (NumC 2)))
 (define a2 (BinopC '+ (NumC 3) a1))
@@ -75,11 +78,21 @@
 (check-equal? (parse '(+ 1 2)) a1)
 (check-equal? (parse '(+ 3 (+ 1 2))) a2)
 (check-equal? (parse '(* (+ 1 2) (+ 3 (+ 1 2)))) a3)
+(check-equal? (parse '(* 3 (- 1 2))) (BinopC '* (NumC 3) (BinopC '- (NumC 1) (NumC 2))))
 (check-equal? (parse '(- 3 2)) sub)
 (check-equal? (parse '(/ 4 2)) div)
 (check-exn #rx"expression" (lambda () (parse '{+ 4})))
 (check-exn #rx"operator" (lambda () (parse '{& 4 5})))
 (check-equal? (parse '(leq0? 1 (+ 1 2) (+ 3 (+ 1 2)))) leq0-1)
+(check-equal? (parse '(leq0? 1 2 3)) (leq0? (NumC 1) (NumC 2) (NumC 3)))
+(check-equal? (parse 'x) (IdC 'x))
+(check-equal? (parse '(f 5)) (FunAppC 'f (NumC 5)))
+
+; Test cases for function parsing
+(check-equal? (parse-fundef '{def {add x} = {+ x 1}}) (FunC 'add 'x (BinopC '+ (IdC 'x) (NumC 1))))
+(check-equal? (parse-fundef '{def {mul x} = {* x 2}}) (FunC 'mul 'x (BinopC '* (IdC 'x) (NumC 2))))
+
+
 
 ;; interp consumes an abstract syntax tree to produce an answer
 (define (interp [exp : ExprC] [funs : (Listof FundefC)]) : Real
@@ -90,7 +103,7 @@
     [(leq0? test then else) (if (<= (interp test funs) 0)
                                  (interp then funs)
                                  (interp else funs))]
-    [(IdC id) (error 'interp "VVQS: unbound identifier ~a" id)]
+    [(IdC id) (error 'interp "VVQS: unbound identifier ~e" id)]
     [(FunAppC fun arg)
      (define fun-def (lookup-fun fun funs))
      (define arg-val (interp arg funs))
@@ -108,13 +121,26 @@
     [(BinopC o l r) (BinopC o (subst x v l) (subst x v r))]
     [(leq0? test then else) (leq0? (subst x v test) (subst x v then) (subst x v else))]
     [(FunAppC fun arg) (FunAppC fun (subst x v arg))]))
-  
-(check-equal? (interp a1) 3)
-(check-equal? (interp a2) 6)
-(check-equal? (interp a3) 18)
-(check-equal? (interp sub) 1)
-(check-equal? (interp div) 2)
-(check-equal? (interp (NumC 0)) 0)
-(check-exn #rx"zero" (λ () (interp (BinopC '/ (NumC 5) (NumC 0)))))
-(check-equal? (interp leq0-1) 6)
-(check-equal? (interp leq0-2) 3)
+
+; Test cases for program parsing and interpretation
+(define test-prog1
+  '{{def {add x} = {+ x 1}}
+    {def {mul x} = {* x 2}}
+    {def {main init} = {add {mul init}}}})
+
+(define test-prog2
+  '{{def {sub x} = {- x 1}}
+    {def {div x} = {/ x 2}}
+    {def {main init} = {sub {div init}}}})
+
+
+
+(check-equal? (interp a1 '()) 3)
+(check-equal? (interp a2 '()) 6)
+(check-equal? (interp a3 '()) 18)
+(check-equal? (interp sub '()) 1)
+(check-equal? (interp div '()) 2)
+(check-equal? (interp (NumC 0) '()) 0)
+(check-exn #rx"zero" (λ () (interp (BinopC '/ (NumC 5) (NumC 0)) '() )))
+(check-equal? (interp leq0-1 '()) 6)
+(check-equal? (interp leq0-2 '()) 3)
