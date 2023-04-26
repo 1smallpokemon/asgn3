@@ -1,5 +1,9 @@
+;; PROGRESS TOWARDS GOAL:
+;; Full project implemented
+
 #lang typed/racket
 
+;; Define data structures for the abstract syntax tree (AST)
 (require typed/rackunit)
 (struct IdC ([id : Symbol]) #:transparent)
 (define-type FundefC (U FunC))
@@ -20,38 +24,48 @@
    '- -
    '/ /))
 
+(define badsyms
+  (hash
+   'def #f
+   'leq0? #f
+   'else #f
+   'then #f
+   '= #f))
+
+;; ValidSymbol? checks if a symbol is valid for use in the AST
 (define (ValidSymbol? [sym : Symbol]) : Boolean
   (cond
     [(hash-has-key? ops sym) #f]
-    [else (match sym
-            ['def #f]
-            ['leq0? #f]
-            ['else #f]
-            ['then #f]
-            ['= #f]
-            [other #t])]))
+    [(hash-has-key? badsyms sym) #f]
+    [else #t]))
 
+;; parse-prog converts a list of S-expressions into a list of FundefC
 (define (parse-prog [s : Sexp]) : (Listof FundefC)
   (map parse-fundef (cast s (Listof Sexp))))
 
+;; top-interp interprets an S-expression as a program and returns the result
 (: top-interp (Sexp -> Real))
 (define (top-interp fun-sexps)
   (interp-fns (parse-prog fun-sexps)))
 
+;; interp-fns interprets a list of FundefC and returns the result of the main function
 (define (interp-fns [funs : (Listof FundefC)]) : Real
   (define main (lookup-fun 'main funs))
   (define init (NumC 0))
   (define main-body-substituted (subst 'init init (FunC-body main)))
   (interp main-body-substituted funs))
 
+;; lookup-fun finds a function definition by its name in a list of FundefC
 (define (lookup-fun (name : Symbol) (funs : (Listof FundefC))) : FundefC
-  (cond [(empty? funs) (error 'interp "VVQS: function not found ~e" name)]
-        [else
-         (define f (first funs))
-         (cond [(FunC? f) (if (symbol=? name (FunC-name f)) f (lookup-fun name (cdr funs)))]
-               [else (lookup-fun name (cdr funs))])]))
+  (match funs
+    [(list) (error 'interp "VVQS: function not found ~e" name)]
+    [(cons f rest)
+     (match f
+       [(FunC fname _ _ )
+        (if (symbol=? name fname) f (lookup-fun name rest))])]))
 
 ;; main VVQS parsing function
+;; parse converts an S-expression into an ExprC (AST)
 (define (parse [expr : Sexp]) : ExprC
   (match expr
     [(? real? n) (NumC n)]
@@ -65,6 +79,7 @@
      (FunAppC f (parse arg))]
     [other (error 'parse "VVQS: illegal expression: ~e" other)]))
 
+;; parse-fundef converts an S-expression into a FundefC (function definition)
 (define (parse-fundef [s : Sexp]) : FundefC
   (match s
     [(list 'def (list (? symbol? (? ValidSymbol? id))
@@ -73,6 +88,7 @@
     [other (error 'parse-fundef "VVQS: illegal function ~e" s)]))
 
 ;; interp consumes an abstract syntax tree to produce an answer
+;; in the context of a list of FundefC
 (define (interp [exp : ExprC] [funs : (Listof FundefC)]) : Real
   (match exp
     [(NumC n) n]
@@ -88,6 +104,7 @@
      (define substituted-body (subst (FunC-arg fun-def) (NumC arg-val) (FunC-body fun-def)))
      (interp substituted-body funs)]))
 
+;; subst substitutes an ExprC for a Symbol in another ExprC
 (define (subst (x : Symbol) (v : ExprC) (e : ExprC)) : ExprC
   (match e
     [(NumC _) e]
@@ -112,6 +129,7 @@
 (check-equal? (parse '(/ 4 2)) div)
 (check-exn #rx"expression" (lambda () (parse '{+ 4})))
 (check-exn #rx"operator" (lambda () (parse '{& 4 5})))
+(check-exn #rx"VVQS: illegal expression" (lambda () (parse 'def)))
 (check-equal? (parse '(leq0? 1 then (+ 1 2) else (+ 3 (+ 1 2)))) leq0-1)
 (check-equal? (parse '(leq0? 1 then 2 else 3)) (leq0? (NumC 1) (NumC 2) (NumC 3)))
 (check-equal? (parse 'x) (IdC 'x))
@@ -120,6 +138,7 @@
 ; Test cases for function parsing
 (check-equal? (parse-fundef '{def {add x} = {+ x 1}}) (FunC 'add 'x (BinopC '+ (IdC 'x) (NumC 1))))
 (check-equal? (parse-fundef '{def {mul x} = {* x 2}}) (FunC 'mul 'x (BinopC '* (IdC 'x) (NumC 2))))
+(check-exn #rx"illegal function" (lambda () (parse-fundef '(def (def x) = (+ x 1)))))
 
 
 ; Test cases for program parsing and interpretation
@@ -143,7 +162,28 @@
 
 (check-equal? (top-interp test-prog3) -1) ; (negate (+ 0 1)) = (negate 1) = -1
 
+;; Test case that reaches the "empty? funs" branch in lookup-fun
+(define test-prog-no-main
+'{{def {add x} = {+ x 1}}
+{def {mul x} = {* x 2}}})
 
+(check-exn #rx"VVQS: function not found" (lambda () (top-interp test-prog-no-main)))
+
+;; Test case that reaches the "else (lookup-fun name (cdr funs))" branch in lookup-fun
+(define test-prog-multiple-funs
+'{{def {add x} = {+ x 1}}
+{def {mul x} = {* x 2}}
+{def {main init} = {mul init}}})
+
+(check-equal? (top-interp test-prog-multiple-funs) 0) ; (mul 0) = 0
+
+;;test case to reach unbound indentifier
+(define test-prog-unbound-id
+  '{{def {main init} = unbound-id}})
+
+(check-exn #rx"unbound identifier" (lambda () (top-interp test-prog-unbound-id)))
+
+;;single interp test cases (no funtions)
 (check-equal? (interp a1 '()) 3)
 (check-equal? (interp a2 '()) 6)
 (check-equal? (interp a3 '()) 18)
